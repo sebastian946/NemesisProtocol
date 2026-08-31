@@ -3,6 +3,8 @@ from ursina.prefabs.first_person_controller import FirstPersonController
 
 app = Ursina()
 
+from weapons import Pistol, Sword, load_sound  # noqa: E402 (necesita la app creada)
+
 Sky()
 
 # --- Arena ---
@@ -77,5 +79,92 @@ obstacles += [
 ]
 
 player = FirstPersonController(y=2, origin_y=-.5)
+
+
+# --- Dianas de práctica (enemigos de prueba hasta el ticket de la clase Enemy) ---
+kill_sound = load_sound("kill.wav")
+
+DUMMY_COLOR = color.rgb32(190, 60, 60)
+
+
+class TargetDummy(Entity):
+    def __init__(self, x, z):
+        super().__init__(position=(x, 1, z))
+        self.collider = BoxCollider(self, center=Vec3(0, 0, 0), size=Vec3(1, 2, 1))
+        self.max_hp = 100
+        self.hp = self.max_hp
+
+        self.body = Entity(parent=self, model="cube", color=DUMMY_COLOR,
+                           scale=(.6, 1.1, .4), y=-.2)
+        self.head = Entity(parent=self, model="sphere", color=DUMMY_COLOR.tint(.1),
+                           scale=(.45, .4, .45), y=.55)
+        self.bar_bg = Entity(parent=self, model="quad", color=color.rgb32(35, 35, 35),
+                             scale=(.9, .08), y=1.2, billboard=True, unlit=True)
+        self.bar = Entity(parent=self.bar_bg, model="quad", color=color.rgb32(90, 200, 90),
+                          origin_x=-.5, x=-.5, z=-.01, unlit=True)
+
+    def take_damage(self, amount, damage_type, armor_pen):
+        # la fórmula completa (resistencias y armadura) llega en su propio ticket
+        if self.hp <= 0:
+            return
+        self.hp = max(0, self.hp - amount)
+        self.bar.scale_x = self.hp / self.max_hp
+        self.body.blink(color.white, duration=.12)
+        if self.hp <= 0:
+            self.die()
+
+    def die(self):
+        kill_sound.play()
+        self.collider = None
+        self.animate_scale(Vec3(.01, .01, .01), duration=.25, curve=curve.in_back)
+        invoke(self.respawn, delay=3)
+
+    def respawn(self):
+        self.hp = self.max_hp
+        self.bar.scale_x = 1
+        self.scale = Vec3(.01, .01, .01)
+        self.animate_scale(Vec3(1, 1, 1), duration=.25, curve=curve.out_back)
+        self.collider = BoxCollider(self, center=Vec3(0, 0, 0), size=Vec3(1, 2, 1))
+
+
+dummies = [TargetDummy(0, 10), TargetDummy(-10, -6), TargetDummy(14, 3)]
+
+
+# --- Armas: espada (1) y pistola (2) ---
+weapons = {"1": Sword(), "2": Pistol()}
+current_weapon = weapons["2"]
+current_weapon.equip()
+
+weapon_label = Text(origin=(.5, -.5), position=window.bottom_right + Vec2(-.03, .03), scale=1.2)
+hint_label = Text(text="Click izquierdo: atacar | Teclas 1-2: cambiar de arma",
+                  origin=(-.5, -.5), position=window.bottom_left + Vec2(.03, .03),
+                  scale=.8, color=color.rgb32(220, 220, 220))
+
+
+def update_weapon_label():
+    parts = []
+    for key, weapon in weapons.items():
+        name = f"[{key}] {weapon.weapon_name}"
+        parts.append(f"<yellow>{name}<default>" if weapon is current_weapon else name)
+    weapon_label.text = "   ".join(parts)
+
+
+update_weapon_label()
+
+
+def input(key):
+    global current_weapon
+    if key in weapons and weapons[key] is not current_weapon:
+        current_weapon.unequip()
+        current_weapon = weapons[key]
+        current_weapon.equip()
+        update_weapon_label()
+
+
+def update():
+    # mantener presionado dispara/golpea respetando la cadencia del arma
+    if held_keys["left mouse"]:
+        current_weapon.try_attack(player)
+
 
 app.run()
