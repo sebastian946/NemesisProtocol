@@ -1,8 +1,16 @@
+import sys
+from pathlib import Path
+
+sys.path.append(str(Path(__file__).resolve().parent.parent))  # para importar /shared
+
 from ursina import *
 from ursina.prefabs.first_person_controller import FirstPersonController
 
+from shared.models import EnemyStats
+
 app = Ursina()
 
+from enemy import Enemy  # noqa: E402
 from weapons import Pistol, Sword, load_sound  # noqa: E402 (necesita la app creada)
 
 Sky()
@@ -81,53 +89,66 @@ obstacles += [
 player = FirstPersonController(y=2, origin_y=-.5)
 
 
-# --- Dianas de práctica (enemigos de prueba hasta el ticket de la clase Enemy) ---
+# --- Vida del jugador ---
+PLAYER_MAX_HP = 100
+player.hp = PLAYER_MAX_HP
+
 kill_sound = load_sound("kill.wav")
+hurt_sound = load_sound("player_hurt.wav")
 
-DUMMY_COLOR = color.rgb32(190, 60, 60)
-
-
-class TargetDummy(Entity):
-    def __init__(self, x, z):
-        super().__init__(position=(x, 1, z))
-        self.collider = BoxCollider(self, center=Vec3(0, 0, 0), size=Vec3(1, 2, 1))
-        self.max_hp = 100
-        self.hp = self.max_hp
-
-        self.body = Entity(parent=self, model="cube", color=DUMMY_COLOR,
-                           scale=(.6, 1.1, .4), y=-.2)
-        self.head = Entity(parent=self, model="sphere", color=DUMMY_COLOR.tint(.1),
-                           scale=(.45, .4, .45), y=.55)
-        self.bar_bg = Entity(parent=self, model="quad", color=color.rgb32(35, 35, 35),
-                             scale=(.9, .08), y=1.2, billboard=True, unlit=True)
-        self.bar = Entity(parent=self.bar_bg, model="quad", color=color.rgb32(90, 200, 90),
-                          origin_x=-.5, x=-.5, z=-.01, unlit=True)
-
-    def take_damage(self, amount, damage_type, armor_pen):
-        # la fórmula completa (resistencias y armadura) llega en su propio ticket
-        if self.hp <= 0:
-            return
-        self.hp = max(0, self.hp - amount)
-        self.bar.scale_x = self.hp / self.max_hp
-        self.body.blink(color.white, duration=.12)
-        if self.hp <= 0:
-            self.die()
-
-    def die(self):
-        kill_sound.play()
-        self.collider = None
-        self.animate_scale(Vec3(.01, .01, .01), duration=.25, curve=curve.in_back)
-        invoke(self.respawn, delay=3)
-
-    def respawn(self):
-        self.hp = self.max_hp
-        self.bar.scale_x = 1
-        self.scale = Vec3(.01, .01, .01)
-        self.animate_scale(Vec3(1, 1, 1), duration=.25, curve=curve.out_back)
-        self.collider = BoxCollider(self, center=Vec3(0, 0, 0), size=Vec3(1, 2, 1))
+hp_bar_bg = Entity(parent=camera.ui, model="quad", color=color.rgb32(35, 35, 35),
+                   scale=(.3, .03), position=window.bottom_left + Vec2(.19, .1))
+hp_bar = Entity(parent=hp_bar_bg, model="quad", color=color.rgb32(90, 200, 90),
+                origin_x=-.5, x=-.5, z=-.01)
+hp_label = Text(text="HP", origin=(.5, 0), position=hp_bar_bg.position + Vec2(-.17, 0), scale=.9)
+damage_overlay = Entity(parent=camera.ui, model="quad", scale=2,
+                        color=color.rgba32(255, 40, 40, 0))
+game_over_text = Text(text="GAME OVER", origin=(0, 0), scale=3,
+                      color=color.rgb32(230, 60, 60), enabled=False)
 
 
-dummies = [TargetDummy(0, 10), TargetDummy(-10, -6), TargetDummy(14, 3)]
+def damage_player(amount):
+    if player.hp <= 0:
+        return
+    player.hp = max(0, player.hp - amount)
+    hp_bar.scale_x = player.hp / PLAYER_MAX_HP
+    hurt_sound.play()
+    damage_overlay.color = color.rgba32(255, 40, 40, 100)
+    damage_overlay.animate_color(color.rgba32(255, 40, 40, 0), duration=.4)
+    if player.hp <= 0:
+        game_over()
+
+
+def game_over():
+    game_over_text.enabled = True
+    invoke(restart_round, delay=2.5)
+
+
+def restart_round():
+    game_over_text.enabled = False
+    player.hp = PLAYER_MAX_HP
+    hp_bar.scale_x = 1
+    player.position = Vec3(0, 2, 0)
+    for e in enemies:
+        e.respawn()
+
+
+# --- Enemigos ---
+def handle_enemy_death(enemy):
+    kill_sound.play()
+    invoke(enemy.respawn, delay=4)  # provisional: el sistema de oleadas lo reemplazará
+
+
+# Tres builds distintas para demostrar que TODO sale de EnemyStats
+enemies = [
+    Enemy(player, x=0, z=12,
+          on_attack_player=damage_player, on_death=handle_enemy_death),  # base
+    Enemy(player, EnemyStats(hp=60, speed=6.0, size=.8, attack_speed=1.5), x=-20, z=-12,
+          on_attack_player=damage_player, on_death=handle_enemy_death),  # explorador rápido
+    Enemy(player, EnemyStats(hp=200, speed=2.5, size=1.4, melee_damage=20, attack_speed=.6),
+          x=20, z=15,
+          on_attack_player=damage_player, on_death=handle_enemy_death),  # tanque lento
+]
 
 
 # --- Armas: espada (1) y pistola (2) ---
