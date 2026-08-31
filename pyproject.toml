@@ -15,3 +15,8 @@ dependencies = [
     "ursina>=8.3.0",
     "uvicorn>=0.52.4",
 ]
+
+[tool.uv.workspace]
+members = [
+    "PracticeUrsinaEngine",
+]
