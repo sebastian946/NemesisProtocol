@@ -10,7 +10,7 @@ from ursina import *
 
 import time
 
-from shared.models import EnemyStats
+from shared.models import BASE_STATS, EnemyStats
 
 BODY_COLOR = color.rgb32(150, 45, 45)
 HEAD_COLOR = color.rgb32(170, 60, 60)
@@ -29,7 +29,7 @@ def _rotated_y(direction, degrees):
 class Enemy(Entity):
     def __init__(self, player, stats: EnemyStats | None = None, x=0, z=0,
                  on_attack_player=None, on_death=None):
-        stats = stats or EnemyStats()
+        stats = stats or BASE_STATS
         super().__init__(position=(x, stats.size, z), scale=stats.size)
         self.player = player
         self.stats = stats
