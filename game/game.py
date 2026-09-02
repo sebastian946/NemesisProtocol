@@ -6,11 +6,9 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))  # para importar /s
 from ursina import *
 from ursina.prefabs.first_person_controller import FirstPersonController
 
-from shared.models import EnemyStats
-
 app = Ursina()
 
-from enemy import Enemy  # noqa: E402
+from waves import WaveManager, enemies_for_wave  # noqa: E402
 from weapons import Pistol, Sword, load_sound  # noqa: E402 (necesita la app creada)
 
 Sky()
@@ -129,26 +127,23 @@ def restart_round():
     player.hp = PLAYER_MAX_HP
     hp_bar.scale_x = 1
     player.position = Vec3(0, 2, 0)
-    for e in enemies:
-        e.respawn()
+    wave_manager.restart()
 
 
-# --- Enemigos ---
-def handle_enemy_death(enemy):
-    kill_sound.play()
-    invoke(enemy.respawn, delay=4)  # provisional: el sistema de oleadas lo reemplazará
+# --- Oleadas ---
+def on_wave_start(wave, stats):
+    print(f"[oleada {wave}] {enemies_for_wave(wave)} enemigos | stats: {stats.model_dump()}")
 
 
-# Tres builds distintas para demostrar que TODO sale de EnemyStats
-enemies = [
-    Enemy(player, x=0, z=12,
-          on_attack_player=damage_player, on_death=handle_enemy_death),  # base
-    Enemy(player, EnemyStats(hp=60, speed=6.0, size=.8, attack_speed=1.5), x=-20, z=-12,
-          on_attack_player=damage_player, on_death=handle_enemy_death),  # explorador rápido
-    Enemy(player, EnemyStats(hp=200, speed=2.5, size=1.4, melee_damage=20, attack_speed=.6),
-          x=20, z=15,
-          on_attack_player=damage_player, on_death=handle_enemy_death),  # tanque lento
-]
+def on_wave_end(wave, summary):
+    # Hook para la telemetría (Etapa 2): aquí se generará el snapshot WaveTelemetry
+    print(f"[oleada {wave}] superada | {summary}")
+
+
+wave_manager = WaveManager(player, arena_half=half, obstacles=obstacles,
+                           on_attack_player=damage_player, kill_sound=kill_sound,
+                           on_wave_start=on_wave_start, on_wave_end=on_wave_end)
+wave_manager.start()
 
 
 # --- Armas: espada (1) y pistola (2) ---

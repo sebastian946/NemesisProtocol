@@ -36,7 +36,6 @@ class Enemy(Entity):
         self.hp = stats.hp
         self.on_attack_player = on_attack_player or (lambda damage: None)
         self.on_death = on_death or (lambda enemy: None)
-        self.spawn_point = Vec3(self.position)
         self.alive = True
         self._next_attack_time = 0.0
 
@@ -53,6 +52,9 @@ class Enemy(Entity):
                              scale=(.9, .08), y=1.2, billboard=True, unlit=True)
         self.bar = Entity(parent=self.bar_bg, model="quad", color=color.rgb32(90, 200, 90),
                           origin_x=-.5, x=-.5, z=-.01, unlit=True)
+        # aparición: crece desde el suelo
+        self.scale = .01
+        self.animate_scale(Vec3(stats.size), duration=.3, curve=curve.out_back)
 
     # --- IA: perseguir y atacar ---
     def update(self):
@@ -107,12 +109,3 @@ class Enemy(Entity):
         self.collider = None
         self.animate_scale(Vec3(.01, .01, .01), duration=.25, curve=curve.in_back)
         self.on_death(self)
-
-    def respawn(self):
-        """Provisional para playtesting; el sistema de oleadas lo reemplazará."""
-        self.hp = self.stats.hp
-        self.bar.scale_x = 1
-        self.position = self.spawn_point
-        self.animate_scale(Vec3(self.stats.size), duration=.25, curve=curve.out_back)
-        self.collider = BoxCollider(self, center=Vec3(0, 0, 0), size=Vec3(1, 2, 1))
-        self.alive = True
