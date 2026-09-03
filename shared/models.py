@@ -4,6 +4,7 @@
 - BASE_STATS: la única fuente de verdad, inmutable.
 - Adaptation: describe CÓMO cambiar la base (deltas, multiplicadores, overrides).
 - apply_adaptation(): Regla 1 (reemplazo, no acumulación) + Regla 2 (clamps).
+- compute_damage(): fórmula de daño arma → enemigo con resistencias y armadura.
 """
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -116,3 +117,26 @@ def apply_adaptation(base: EnemyStats, adaptation: Adaptation | None) -> EnemySt
     for stat, factor in adaptation.multipliers.items():
         values[stat] *= factor
     return EnemyStats(**clamp_stats(values))
+
+
+# ---------------------------------------------------------------------------
+# Fórmula de daño (plan, sección 🧬):
+#   daño_final = daño_arma × (1 − resist_tipo) × (1 − max(0, armor − armor_pen_arma))
+# ---------------------------------------------------------------------------
+DAMAGE_TYPES = ("slash", "pierce", "blunt")
+
+
+def compute_damage(weapon_damage: float, damage_type: str, weapon_armor_pen: float,
+                   stats: EnemyStats) -> float:
+    """Daño que recibe un enemigo con `stats` de un arma.
+
+    - resist_<tipo> reduce el daño de ese tipo (espada=slash, martillo=blunt,
+      pistola/escopeta/arco=pierce).
+    - armor reduce todo el daño, pero la penetración del arma la descuenta
+      primero; la penetración sobrante no da bonus (max(0, ...)).
+    """
+    if damage_type not in DAMAGE_TYPES:
+        raise ValueError(f"damage_type inválido: {damage_type!r}; usa {DAMAGE_TYPES}")
+    resist = getattr(stats, f"resist_{damage_type}")
+    effective_armor = max(0.0, stats.armor - weapon_armor_pen)
+    return weapon_damage * (1 - resist) * (1 - effective_armor)
