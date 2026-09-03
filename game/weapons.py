@@ -1,10 +1,14 @@
 """Sistema de armas del jugador.
 
 Valores tomados de la tabla ⚔️ del plan (Notion):
-    Espada  — slash,  melee 2m,   cadencia alta,  daño medio, penetración baja
-    Pistola — pierce, media 15m,  cadencia media, daño medio, penetración media
+    Espada   — slash,  melee 2m,    cadencia alta,  daño medio,    penetración baja
+    Martillo — blunt,  melee 2.5m,  cadencia baja,  daño alto,     penetración ALTA
+    Pistola  — pierce, media 15m,   cadencia media, daño medio,    penetración media
+    Escopeta — pierce, corta 6m,    cadencia baja,  daño muy alto, penetración baja
+    Arco     — pierce, larga 30m,   cadencia baja,  daño alto,     penetración ALTA
 """
 from pathlib import Path
+from random import uniform
 
 from ursina import *
 
@@ -16,7 +20,9 @@ STEEL = color.rgb32(200, 205, 215)
 DARK_STEEL = color.rgb32(60, 62, 70)
 GUNMETAL = color.rgb32(45, 45, 52)
 WOOD = color.rgb32(110, 75, 45)
+DARK_WOOD = color.rgb32(80, 52, 30)
 LEATHER = color.rgb32(90, 60, 40)
+FLASH = color.rgb32(255, 220, 120)
 
 
 def load_sound(name):
@@ -56,25 +62,37 @@ class Weapon(Entity):
         self.enabled = False
 
     def try_attack(self, shooter):
-        """Ataca si la cadencia lo permite. Devuelve el RaycastHitInfo o None."""
+        """Ataca si la cadencia lo permite. Devuelve la lista de RaycastHitInfo."""
         now = time.time()
         if now < self._next_attack_time:
-            return None
+            return []
         self._next_attack_time = now + 1 / self.fire_rate
 
         self.attack_sound.play()
         self.animate_attack()
+        hits = self.perform_attack(shooter)
+        if any(h.hit and hasattr(h.entity, "take_damage") for h in hits):
+            self.hit_sound.play()
+        return hits
 
-        hit = raycast(camera.world_position, camera.forward,
+    def perform_attack(self, shooter):
+        """Por defecto un solo rayo al frente. Las subclases pueden cambiarlo."""
+        return [self._fire_ray(camera.forward, self.damage, shooter)]
+
+    def _fire_ray(self, direction, damage, shooter):
+        hit = raycast(camera.world_position, direction,
                       distance=self.range, ignore=(shooter,))
         if hit.hit and hasattr(hit.entity, "take_damage"):
-            hit.entity.take_damage(self.damage, self.damage_type, self.armor_pen)
-            self.hit_sound.play()
+            hit.entity.take_damage(damage, self.damage_type, self.armor_pen)
         return hit
 
     def animate_attack(self):
         pass
 
+
+# ----------------------------------------------------------------------------
+# Melee
+# ----------------------------------------------------------------------------
 
 class Sword(Weapon):
     def __init__(self):
@@ -98,6 +116,34 @@ class Sword(Weapon):
         self.animate_rotation(self.rest_rotation, duration=.22, delay=.11, curve=curve.out_quad)
 
 
+class Hammer(Weapon):
+    def __init__(self):
+        super().__init__(name="Martillo", damage=45, damage_type="blunt", range=2.5,
+                         fire_rate=.8, armor_pen=.40,
+                         attack_sound="hammer_swing.wav",
+                         rest_position=(.6, -.6, 1.15),
+                         rest_rotation=(-25, 12, -14))
+        # mango largo con agarre de cuero, cabeza de acero con bandas
+        Entity(parent=self, model="cube", color=WOOD, scale=(.055, .95, .055), y=.05)
+        Entity(parent=self, model="cube", color=LEATHER, scale=(.062, .28, .062), y=-.3)
+        Entity(parent=self, model="sphere", color=DARK_STEEL, scale=.075, y=-.45)
+        Entity(parent=self, model="cube", color=STEEL, scale=(.16, .15, .34), y=.52)
+        Entity(parent=self, model="cube", color=DARK_STEEL, scale=(.17, .16, .04), y=.52, z=.12)
+        Entity(parent=self, model="cube", color=DARK_STEEL, scale=(.17, .16, .04), y=.52, z=-.12)
+        Entity(parent=self, model="cube", color=STEEL.tint(.15), scale=(.13, .12, .03),
+               y=.52, z=.185)  # cara de golpe
+
+    def animate_attack(self):
+        # golpe de arriba hacia abajo, pesado: sube un poco y cae con fuerza
+        self.animate_rotation(self.rest_rotation + Vec3(-30, 0, 5), duration=.1, curve=curve.out_quad)
+        self.animate_rotation(Vec3(85, -5, 15), duration=.13, delay=.1, curve=curve.in_quad)
+        self.animate_rotation(self.rest_rotation, duration=.45, delay=.3, curve=curve.out_quad)
+
+
+# ----------------------------------------------------------------------------
+# Distancia
+# ----------------------------------------------------------------------------
+
 class Pistol(Weapon):
     def __init__(self):
         super().__init__(name="Pistola", damage=25, damage_type="pierce", range=15,
@@ -113,9 +159,8 @@ class Pistol(Weapon):
                y=-.13, z=-.13, rotation_x=-18)
         Entity(parent=self, model="cube", color=DARK_STEEL, scale=(.06, .015, .12), y=-.06, z=-.02)
         # fogonazo (se muestra un instante al disparar)
-        self.flash = Entity(parent=self, model="quad", color=color.rgb32(255, 220, 120),
-                            scale=.22, z=.33, rotation_z=45, enabled=False,
-                            unlit=True, billboard=True)
+        self.flash = Entity(parent=self, model="quad", color=FLASH, scale=.22, z=.33,
+                            rotation_z=45, enabled=False, unlit=True, billboard=True)
 
     def animate_attack(self):
         # retroceso
@@ -126,3 +171,97 @@ class Pistol(Weapon):
         self.animate_rotation(self.rest_rotation, duration=.16, delay=.06)
         self.flash.enabled = True
         invoke(setattr, self.flash, "enabled", False, delay=.06)
+
+
+class Shotgun(Weapon):
+    """Dispara PELLETS perdigones en cono. `damage` es por perdigón: a bocajarro
+    conectan todos (daño muy alto); a distancia media solo algunos."""
+    PELLETS = 6
+    SPREAD = .07   # ~4 grados de dispersión
+
+    def __init__(self):
+        super().__init__(name="Escopeta", damage=12, damage_type="pierce", range=6,
+                         fire_rate=.7, armor_pen=.10,
+                         attack_sound="shotgun_blast.wav",
+                         rest_position=(.42, -.42, .9),
+                         rest_rotation=(0, 0, 0))
+        # culata de madera, cajón de mecanismos, doble cañón y bomba
+        Entity(parent=self, model="cube", color=DARK_WOOD, scale=(.07, .13, .32),
+               y=-.05, z=-.38, rotation_x=10)
+        Entity(parent=self, model="cube", color=GUNMETAL, scale=(.095, .11, .3), z=-.08)
+        for bx in (-.026, .026):
+            Entity(parent=self, model="cube", color=DARK_STEEL, scale=(.045, .045, .6), x=bx, z=.33)
+        Entity(parent=self, model="cube", color=WOOD, scale=(.085, .07, .2), y=-.07, z=.28)
+        Entity(parent=self, model="cube", color=DARK_STEEL, scale=(.02, .035, .02), y=.07, z=.55)  # mira
+        Entity(parent=self, model="cube", color=DARK_STEEL, scale=(.06, .015, .12), y=-.08, z=-.12)
+        self.flash = Entity(parent=self, model="quad", color=FLASH, scale=.38, z=.68,
+                            rotation_z=45, enabled=False, unlit=True, billboard=True)
+
+    def perform_attack(self, shooter):
+        hits = []
+        for _ in range(self.PELLETS):
+            direction = (camera.forward
+                         + camera.right * uniform(-self.SPREAD, self.SPREAD)
+                         + camera.up * uniform(-self.SPREAD, self.SPREAD)).normalized()
+            hits.append(self._fire_ray(direction, self.damage, shooter))
+        return hits
+
+    def animate_attack(self):
+        # retroceso fuerte
+        self.animate_position(self.rest_position + Vec3(0, .05, -.22),
+                              duration=.06, curve=curve.out_expo)
+        self.animate_position(self.rest_position, duration=.35, delay=.08, curve=curve.out_quad)
+        self.animate_rotation(self.rest_rotation + Vec3(-16, 0, 0), duration=.06)
+        self.animate_rotation(self.rest_rotation, duration=.35, delay=.08)
+        self.flash.enabled = True
+        invoke(setattr, self.flash, "enabled", False, delay=.08)
+
+
+class Bow(Weapon):
+    """Hitscan a 30m (el impacto se resuelve al instante) con una flecha
+    visual que vuela hasta el punto de impacto."""
+    ARROW_SPEED = 70   # m/s, solo para el proyectil visual
+
+    def __init__(self):
+        super().__init__(name="Arco", damage=50, damage_type="pierce", range=30,
+                         fire_rate=.6, armor_pen=.40,
+                         attack_sound="bow_shot.wav",
+                         rest_position=(.32, -.38, .95),
+                         rest_rotation=(0, -12, -8))
+        # empuñadura + palas en dos segmentos (simulan la curva) + cuerda
+        Entity(parent=self, model="cube", color=LEATHER, scale=(.05, .22, .065))
+        for sign in (1, -1):
+            Entity(parent=self, model="cube", color=WOOD, scale=(.035, .34, .05),
+                   y=sign * .26, rotation_x=-sign * 14)
+            Entity(parent=self, model="cube", color=DARK_WOOD, scale=(.028, .3, .04),
+                   y=sign * .56, z=.06, rotation_x=-sign * 32)
+        Entity(parent=self, model="cube", color=color.rgb32(225, 225, 210), unlit=True,
+               scale=(.006, 1.3, .006), z=-.03)
+        # flecha encajada: asta, punta y plumas
+        self.arrow = Entity(parent=self, z=.1)
+        Entity(parent=self.arrow, model="cube", color=WOOD, scale=(.014, .014, .75))
+        Entity(parent=self.arrow, model="cube", color=STEEL, scale=(.03, .03, .07), z=.4, rotation_z=45)
+        Entity(parent=self.arrow, model="cube", color=color.rgb32(200, 50, 50), scale=(.045, .012, .08), z=-.3)
+        Entity(parent=self.arrow, model="cube", color=color.rgb32(200, 50, 50), scale=(.012, .045, .08), z=-.3)
+
+    def perform_attack(self, shooter):
+        hit = self._fire_ray(camera.forward, self.damage, shooter)
+        end = hit.world_point if hit.hit else camera.world_position + camera.forward * self.range
+        self._launch_arrow(end)
+        return [hit]
+
+    def _launch_arrow(self, end):
+        start = self.arrow.world_position
+        arrow = Entity(model="cube", color=WOOD, scale=(.03, .03, .75), position=start)
+        Entity(parent=arrow, model="cube", color=STEEL, scale=(2, 2, .09), z=.5)
+        arrow.look_at(end)
+        duration = max(.04, distance(start, end) / self.ARROW_SPEED)
+        arrow.animate_position(end, duration=duration, curve=curve.linear)
+        destroy(arrow, delay=duration)
+
+    def animate_attack(self):
+        # la flecha desaparece mientras vuela y se "encaja" otra al recargar
+        self.arrow.enabled = False
+        invoke(setattr, self.arrow, "enabled", True, delay=.9)
+        self.animate_rotation(self.rest_rotation + Vec3(-6, 0, 0), duration=.05)
+        self.animate_rotation(self.rest_rotation, duration=.25, delay=.06, curve=curve.out_quad)

@@ -9,7 +9,7 @@ from ursina.prefabs.first_person_controller import FirstPersonController
 app = Ursina()
 
 from waves import WaveManager, enemies_for_wave  # noqa: E402
-from weapons import Pistol, Sword, load_sound  # noqa: E402 (necesita la app creada)
+from weapons import Bow, Hammer, Pistol, Shotgun, Sword, load_sound  # noqa: E402 (necesita la app creada)
 
 Sky()
 
@@ -146,13 +146,13 @@ wave_manager = WaveManager(player, arena_half=half, obstacles=obstacles,
 wave_manager.start()
 
 
-# --- Armas: espada (1) y pistola (2) ---
-weapons = {"1": Sword(), "2": Pistol()}
+# --- Armas: teclas 1-5 ---
+weapons = {"1": Sword(), "2": Pistol(), "3": Hammer(), "4": Shotgun(), "5": Bow()}
 current_weapon = weapons["2"]
 current_weapon.equip()
 
-weapon_label = Text(origin=(.5, -.5), position=window.bottom_right + Vec2(-.03, .03), scale=1.2)
-hint_label = Text(text="Click izquierdo: atacar | Teclas 1-2: cambiar de arma",
+weapon_label = Text(origin=(.5, -.5), position=window.bottom_right + Vec2(-.03, .03), scale=1)
+hint_label = Text(text="Click izquierdo: atacar | Teclas 1-5: cambiar de arma",
                   origin=(-.5, -.5), position=window.bottom_left + Vec2(.03, .03),
                   scale=.8, color=color.rgb32(220, 220, 220))
 
