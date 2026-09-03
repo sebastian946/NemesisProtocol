@@ -1,10 +1,10 @@
-"""Sistema de oleadas: spawnea N enemigos por ronda en puntos aleatorios,
-detecta cuando mueren todos, hace una pausa y lanza la siguiente.
+"""Wave system: spawns N enemies per round at random points, detects when
+they are all dead, pauses briefly and launches the next wave.
 
-Hooks para las siguientes etapas:
-- on_wave_start(wave, stats): al spawnear la oleada.
-- on_wave_end(wave, summary): al morir el último enemigo → aquí se conecta la telemetría.
-- set_stats_for_next_wave(stats): aquí entrará apply_adaptation(BASE_STATS, adaptación).
+Hooks for the next stages:
+- on_wave_start(wave, stats): when the wave spawns.
+- on_wave_end(wave, summary): when the last enemy dies → telemetry plugs in here.
+- set_stats_for_next_wave(stats): apply_adaptation(BASE_STATS, adaptation) plugs in here.
 """
 from math import ceil
 from random import uniform
@@ -16,15 +16,15 @@ import time
 from enemy import Enemy
 from shared.models import BASE_STATS, EnemyStats
 
-WAVE_BREAK_SECONDS = 5     # pausa entre oleadas
+WAVE_BREAK_SECONDS = 5     # pause between waves
 FIRST_WAVE_DELAY = 3
-MIN_SPAWN_DISTANCE = 12    # nunca aparecen pegados al jugador
-SPAWN_MARGIN = 3           # distancia mínima a las paredes
+MIN_SPAWN_DISTANCE = 12    # enemies never spawn right next to the player
+SPAWN_MARGIN = 3           # minimum distance from the walls
 MAX_ENEMIES_PER_WAVE = 12
 
 
 def enemies_for_wave(wave: int) -> int:
-    """Oleada 1 → 3 enemigos, +1 por oleada hasta el tope."""
+    """Wave 1 → 3 enemies, +1 per wave up to the cap."""
     return min(2 + wave, MAX_ENEMIES_PER_WAVE)
 
 
@@ -42,7 +42,7 @@ class WaveManager(Entity):
 
         self.wave = 0
         self.enemies: list[Enemy] = []
-        self.stats: EnemyStats = BASE_STATS   # stats de la próxima oleada
+        self.stats: EnemyStats = BASE_STATS   # stats for the next wave
         self._wave_started_at = 0.0
         self._break_left = 0.0
 
@@ -54,7 +54,7 @@ class WaveManager(Entity):
         self.banner = Text(text="", origin=(0, 0), position=(0, .18), scale=2.6,
                            color=color.rgb32(255, 210, 80), enabled=False)
 
-    # --- API pública ---
+    # --- Public API ---
     def start(self):
         self.wave = 0
         self.stats = BASE_STATS
@@ -68,14 +68,14 @@ class WaveManager(Entity):
         self.start()
 
     def set_stats_for_next_wave(self, stats: EnemyStats):
-        """Punto de entrada de las adaptaciones (Etapas 3 y 4)."""
+        """Entry point for adaptations (Stages 3 and 4)."""
         self.stats = stats
 
     @property
     def alive_enemies(self):
         return [e for e in self.enemies if e.alive]
 
-    # --- Ciclo de la oleada ---
+    # --- Wave lifecycle ---
     def update(self):
         if self._break_left <= 0:
             return
@@ -104,7 +104,7 @@ class WaveManager(Entity):
     def _on_enemy_death(self, enemy):
         if self.kill_sound:
             self.kill_sound.play()
-        destroy(enemy, delay=.4)  # deja terminar la animación de muerte
+        destroy(enemy, delay=.4)  # let the death animation finish
         self.enemies.remove(enemy)
         self._update_status()
         if not self.alive_enemies:
@@ -141,7 +141,7 @@ class WaveManager(Entity):
             if any(distance_xz(Vec3(x, 0, z), e.position) < 2 for e in self.enemies):
                 continue
             return x, z
-        return limit, limit  # fallback: esquina
+        return limit, limit  # fallback: a corner
 
     @staticmethod
     def _inside_obstacle(x, z, obstacle, padding=1.2):
