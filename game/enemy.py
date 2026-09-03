@@ -10,7 +10,7 @@ from ursina import *
 
 import time
 
-from shared.models import BASE_STATS, EnemyStats
+from shared.models import BASE_STATS, EnemyStats, compute_damage
 
 BODY_COLOR = color.rgb32(150, 45, 45)
 HEAD_COLOR = color.rgb32(170, 60, 60)
@@ -94,15 +94,27 @@ class Enemy(Entity):
         self.on_attack_player(self.stats.melee_damage)
 
     # --- Daño y muerte ---
-    def take_damage(self, amount, damage_type="pierce", armor_pen=0.0):
-        # la fórmula completa (resistencias y armadura) llega en su propio ticket
+    def take_damage(self, weapon_damage, damage_type="pierce", armor_pen=0.0):
+        """Aplica la fórmula del plan: resistencia por tipo + armadura vs penetración."""
         if not self.alive:
-            return
-        self.hp = max(0, self.hp - amount)
+            return 0
+        damage = compute_damage(weapon_damage, damage_type, armor_pen, self.stats)
+        self.hp = max(0, self.hp - damage)
         self.bar.scale_x = self.hp / self.stats.hp
         self.body.blink(color.white, duration=.12)
+        self._show_damage_number(damage, weapon_damage)
         if self.hp <= 0:
             self.die()
+        return damage
+
+    def _show_damage_number(self, damage, weapon_damage):
+        # número que flota y se desvanece; amarillo si el enemigo mitigó parte del daño
+        mitigated = damage < weapon_damage - .01
+        label = Text(text=str(round(damage)), parent=scene, billboard=True, scale=14,
+                     origin=(0, 0), position=self.world_position + Vec3(0, 1.4 * self.scale_y, 0),
+                     color=color.rgb32(255, 200, 60) if mitigated else color.white)
+        label.animate_position(label.position + Vec3(0, .8, 0), duration=.6, curve=curve.out_quad)
+        destroy(label, delay=.6)
 
     def die(self):
         self.alive = False
