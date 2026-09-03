@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 
-sys.path.append(str(Path(__file__).resolve().parent.parent))  # para importar /shared
+sys.path.append(str(Path(__file__).resolve().parent.parent))  # so /shared is importable
 
 from ursina import *
 from ursina.prefabs.first_person_controller import FirstPersonController
@@ -9,12 +9,12 @@ from ursina.prefabs.first_person_controller import FirstPersonController
 app = Ursina()
 
 from waves import WaveManager, enemies_for_wave  # noqa: E402
-from weapons import Bow, Hammer, Pistol, Shotgun, Sword, load_sound  # noqa: E402 (necesita la app creada)
+from weapons import Bow, Hammer, Pistol, Shotgun, Sword, load_sound  # noqa: E402 (needs the app created)
 
 Sky()
 
 # --- Arena ---
-ARENA_SIZE = 60        # lado de la arena (unidades)
+ARENA_SIZE = 60        # arena side length (units)
 WALL_HEIGHT = 6
 WALL_THICKNESS = 1
 
@@ -34,7 +34,7 @@ def make_wall(position, scale):
                   collider="box")
 
 
-# Paredes perimetrales (norte, sur, este, oeste)
+# Perimeter walls (north, south, east, west)
 half = ARENA_SIZE / 2
 walls = [
     make_wall((0, WALL_HEIGHT / 2,  half), (ARENA_SIZE + WALL_THICKNESS, WALL_HEIGHT, WALL_THICKNESS)),
@@ -43,7 +43,7 @@ walls = [
     make_wall((-half, WALL_HEIGHT / 2, 0), (WALL_THICKNESS, WALL_HEIGHT, ARENA_SIZE + WALL_THICKNESS)),
 ]
 
-# Pilares decorativos en las esquinas, un poco más altos que las paredes
+# Decorative corner pillars, slightly taller than the walls
 for x in (-half, half):
     for z in (-half, half):
         Entity(model="cube", position=(x, (WALL_HEIGHT + 2) / 2, z),
@@ -65,8 +65,8 @@ def make_crate(x, z, size=2.5):
                   collider="box")
 
 
-# --- Obstáculos para cubrirse ---
-# Cuatro columnas altas formando un anillo interior
+# --- Cover obstacles ---
+# Four tall columns forming an inner ring
 obstacles = [
     make_column(-15, -15),
     make_column( 15, -15),
@@ -74,7 +74,7 @@ obstacles = [
     make_column( 15,  15),
 ]
 
-# Cajas de distintos tamaños repartidas por la arena
+# Crates of different sizes scattered around the arena
 obstacles += [
     make_crate(0, -20, size=3),
     make_crate(-22, 5, size=2.5),
@@ -87,7 +87,7 @@ obstacles += [
 player = FirstPersonController(y=2, origin_y=-.5)
 
 
-# --- Vida del jugador ---
+# --- Player health ---
 PLAYER_MAX_HP = 100
 player.hp = PLAYER_MAX_HP
 
@@ -130,14 +130,14 @@ def restart_round():
     wave_manager.restart()
 
 
-# --- Oleadas ---
+# --- Waves ---
 def on_wave_start(wave, stats):
-    print(f"[oleada {wave}] {enemies_for_wave(wave)} enemigos | stats: {stats.model_dump()}")
+    print(f"[wave {wave}] {enemies_for_wave(wave)} enemies | stats: {stats.model_dump()}")
 
 
 def on_wave_end(wave, summary):
-    # Hook para la telemetría (Etapa 2): aquí se generará el snapshot WaveTelemetry
-    print(f"[oleada {wave}] superada | {summary}")
+    # Telemetry hook (Stage 2): the WaveTelemetry snapshot will be built here
+    print(f"[wave {wave}] cleared | {summary}")
 
 
 wave_manager = WaveManager(player, arena_half=half, obstacles=obstacles,
@@ -146,7 +146,7 @@ wave_manager = WaveManager(player, arena_half=half, obstacles=obstacles,
 wave_manager.start()
 
 
-# --- Armas: teclas 1-5 ---
+# --- Weapons: keys 1-5 ---
 weapons = {"1": Sword(), "2": Pistol(), "3": Hammer(), "4": Shotgun(), "5": Bow()}
 current_weapon = weapons["2"]
 current_weapon.equip()
@@ -178,7 +178,7 @@ def input(key):
 
 
 def update():
-    # mantener presionado dispara/golpea respetando la cadencia del arma
+    # holding the button keeps attacking, limited by the weapon's fire rate
     if held_keys["left mouse"]:
         current_weapon.try_attack(player)
 

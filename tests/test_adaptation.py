@@ -1,4 +1,4 @@
-"""Tests de las Reglas 1 y 2 del plan (BASE_STATS + apply_adaptation + clamps)."""
+"""Tests for Rules 1 and 2 of the plan (BASE_STATS + apply_adaptation + clamps)."""
 import pytest
 from pydantic import ValidationError
 
@@ -13,7 +13,7 @@ ANTI_ESPADA = Adaptation(name="anti-espada",
                          multipliers={"ranged_range": 1.5})
 
 
-# --- Regla 1: reemplazo, no acumulación ---
+# --- Rule 1: replace, never accumulate ---
 
 def test_base_stats_es_inmutable():
     with pytest.raises(ValidationError):
@@ -27,18 +27,18 @@ def test_apply_no_modifica_la_base():
 
 
 def test_aplicar_dos_adaptaciones_equivale_a_solo_la_ultima():
-    # Oleada 3: anti-pistola. Oleada 4: anti-espada (la anterior se descarta).
+    # Wave 3: anti-pistol. Wave 4: anti-sword (the previous one is discarded).
     oleada_3 = apply_adaptation(BASE_STATS, ANTI_PISTOLA)
-    oleada_4 = apply_adaptation(BASE_STATS, ANTI_ESPADA)   # SIEMPRE desde la base
+    oleada_4 = apply_adaptation(BASE_STATS, ANTI_ESPADA)   # ALWAYS from the base
     solo_ultima = apply_adaptation(BASE_STATS, ANTI_ESPADA)
 
     assert oleada_4 == solo_ultima
-    assert oleada_4.resist_pierce == BASE_STATS.resist_pierce  # anti-pistola no se acumuló
+    assert oleada_4.resist_pierce == BASE_STATS.resist_pierce  # anti-pistol did not accumulate
     assert oleada_3.resist_pierce == pytest.approx(0.4)
 
 
 def test_acumulacion_encadenada_se_detecta():
-    # Si alguien hace lo PROHIBIDO (encadenar), el resultado difiere de solo-la-última.
+    # If someone does the FORBIDDEN thing (chaining), the result differs from last-only.
     encadenado = apply_adaptation(apply_adaptation(BASE_STATS, ANTI_PISTOLA), ANTI_ESPADA)
     correcto = apply_adaptation(BASE_STATS, ANTI_ESPADA)
     assert encadenado != correcto
@@ -49,17 +49,17 @@ def test_deltas_multiplicadores_y_overrides():
     assert stats.resist_slash == pytest.approx(0.4)
     assert stats.ranged_enabled is True
     assert stats.ranged_range == pytest.approx(18.0)       # 12 * 1.5
-    assert stats.hp == BASE_STATS.hp                       # lo no mencionado no cambia
+    assert stats.hp == BASE_STATS.hp                       # untouched stats stay the same
 
 
 def test_sin_adaptacion_devuelve_la_base():
     assert apply_adaptation(BASE_STATS, None) == BASE_STATS
 
 
-# --- Regla 2: clamps ---
+# --- Rule 2: clamps ---
 
 def test_valores_fuera_de_rango_se_recortan():
-    exagerada = Adaptation(name="LLM alucinando",
+    exagerada = Adaptation(name="hallucinating LLM",
                            deltas={"armor": 5.0, "resist_pierce": 9.0, "hp": -1000},
                            multipliers={"speed": 100})
     stats = apply_adaptation(BASE_STATS, exagerada)
@@ -80,7 +80,7 @@ def test_enteros_se_redondean():
     assert stats.hp == 133
 
 
-# --- Validación del modelo Adaptation ---
+# --- Adaptation model validation ---
 
 def test_adaptation_rechaza_stats_desconocidos():
     with pytest.raises(ValidationError):
@@ -89,7 +89,7 @@ def test_adaptation_rechaza_stats_desconocidos():
 
 def test_adaptation_rechaza_delta_en_booleano():
     with pytest.raises(ValidationError):
-        Adaptation(name="mal", deltas={"ranged_enabled": 1})
+        Adaptation(name="bad", deltas={"ranged_enabled": 1})
 
 
 def test_enemy_stats_es_inmutable():

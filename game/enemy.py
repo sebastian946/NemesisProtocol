@@ -1,8 +1,8 @@
-"""Clase Enemy: enemigo controlado 100% por sus EnemyStats.
+"""Enemy class: an enemy driven 100% by its EnemyStats.
 
-Cambiar valores del stats cambia el comportamiento sin tocar más código:
-persecución (speed, detection_range), tamaño/hitbox (size),
-melee (melee_damage, attack_speed) y vida (hp).
+Changing the stats changes the behavior without touching any other code:
+chasing (speed, detection_range), size/hitbox (size),
+melee (melee_damage, attack_speed) and health (hp).
 """
 from math import cos, radians, sin
 
@@ -16,8 +16,8 @@ BODY_COLOR = color.rgb32(150, 45, 45)
 HEAD_COLOR = color.rgb32(170, 60, 60)
 EYE_COLOR = color.rgb32(255, 220, 90)
 
-ATTACK_RANGE = 1.8      # metros a los que conecta el melee
-AVOID_ANGLES = (0, 40, -40, 75, -75)  # desvíos para rodear obstáculos
+ATTACK_RANGE = 1.8      # meters at which the melee attack connects
+AVOID_ANGLES = (0, 40, -40, 75, -75)  # detours used to walk around obstacles
 
 
 def _rotated_y(direction, degrees):
@@ -44,7 +44,7 @@ class Enemy(Entity):
                            scale=(.6, 1.1, .4), y=-.2)
         self.head = Entity(parent=self, model="sphere", color=HEAD_COLOR,
                            scale=(.45, .4, .45), y=.55)
-        # ojos: dejan ver hacia dónde mira
+        # eyes: make it obvious where the enemy is looking
         for ex in (-.1, .1):
             Entity(parent=self.head, model="cube", color=EYE_COLOR, unlit=True,
                    scale=(.18, .12, .1), position=(ex, .1, .45))
@@ -52,11 +52,11 @@ class Enemy(Entity):
                              scale=(.9, .08), y=1.2, billboard=True, unlit=True)
         self.bar = Entity(parent=self.bar_bg, model="quad", color=color.rgb32(90, 200, 90),
                           origin_x=-.5, x=-.5, z=-.01, unlit=True)
-        # aparición: crece desde el suelo
+        # spawn: grows up from the ground
         self.scale = .01
         self.animate_scale(Vec3(stats.size), duration=.3, curve=curve.out_back)
 
-    # --- IA: perseguir y atacar ---
+    # --- AI: chase and attack ---
     def update(self):
         if not self.alive:
             return
@@ -73,7 +73,7 @@ class Enemy(Entity):
             self._try_melee()
 
     def _chase(self, direction):
-        # rodea obstáculos probando desvíos crecientes a izquierda/derecha
+        # walks around obstacles by trying increasing detours left and right
         for angle in AVOID_ANGLES:
             candidate = _rotated_y(direction, angle)
             blocked = raycast(self.world_position, candidate,
@@ -88,14 +88,14 @@ class Enemy(Entity):
         if now < self._next_attack_time:
             return
         self._next_attack_time = now + 1 / self.stats.attack_speed
-        # embestida corta hacia adelante
+        # short lunge forward
         self.body.animate_position(Vec3(0, -.1, .25), duration=.08, curve=curve.out_expo)
         self.body.animate_position(Vec3(0, -.2, 0), duration=.2, delay=.1)
         self.on_attack_player(self.stats.melee_damage)
 
-    # --- Daño y muerte ---
+    # --- Damage and death ---
     def take_damage(self, weapon_damage, damage_type="pierce", armor_pen=0.0):
-        """Aplica la fórmula del plan: resistencia por tipo + armadura vs penetración."""
+        """Applies the plan's formula: per-type resistance + armor vs penetration."""
         if not self.alive:
             return 0
         damage = compute_damage(weapon_damage, damage_type, armor_pen, self.stats)
@@ -108,7 +108,7 @@ class Enemy(Entity):
         return damage
 
     def _show_damage_number(self, damage, weapon_damage):
-        # número que flota y se desvanece; amarillo si el enemigo mitigó parte del daño
+        # floating number that rises and fades; yellow when the enemy mitigated part of the damage
         mitigated = damage < weapon_damage - .01
         label = Text(text=str(round(damage)), parent=scene, billboard=True, scale=14,
                      origin=(0, 0), position=self.world_position + Vec3(0, 1.4 * self.scale_y, 0),
