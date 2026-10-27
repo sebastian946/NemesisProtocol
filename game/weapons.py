@@ -14,6 +14,8 @@ from ursina import *
 
 import time
 
+from shared.i18n import weapon_name
+
 SOUNDS_DIR = Path(__file__).resolve().parent.parent / "assets" / "sounds"
 
 STEEL = color.rgb32(200, 205, 215)
@@ -32,10 +34,11 @@ def load_sound(name):
 class Weapon(Entity):
     """Base class: stats + fire rate + raycast attack from the camera."""
 
-    def __init__(self, name, damage, damage_type, range, fire_rate, armor_pen,
+    def __init__(self, weapon_id, damage, damage_type, range, fire_rate, armor_pen,
                  attack_sound, rest_position, rest_rotation, **kwargs):
         super().__init__(parent=camera, enabled=False, **kwargs)
-        self.weapon_name = name
+        self.weapon_id = weapon_id                 # language-neutral, used by the telemetry
+        self.weapon_name = weapon_name(weapon_id)  # shown on the HUD in the active LANGUAGE
         self.damage = damage
         self.damage_type = damage_type   # slash | pierce | blunt
         self.range = range               # meters
@@ -50,6 +53,9 @@ class Weapon(Entity):
         self.attack_sound = load_sound(attack_sound)
         self.hit_sound = load_sound("hit.wav")
         self._next_attack_time = 0.0
+        self._kills_this_attack = 0
+        # telemetry hook: on_attack(weapon_id, hit, kills), set by the game
+        self.on_attack = None
 
     def equip(self):
         self.enabled = True
@@ -70,9 +76,13 @@ class Weapon(Entity):
 
         self.attack_sound.play()
         self.animate_attack()
+        self._kills_this_attack = 0
         hits = self.perform_attack(shooter)
-        if any(h.hit and hasattr(h.entity, "take_damage") for h in hits):
+        connected = any(h.hit and hasattr(h.entity, "take_damage") for h in hits)
+        if connected:
             self.hit_sound.play()
+        if self.on_attack:
+            self.on_attack(self.weapon_id, connected, self._kills_this_attack)
         return hits
 
     def perform_attack(self, shooter):
@@ -83,7 +93,10 @@ class Weapon(Entity):
         hit = raycast(camera.world_position, direction,
                       distance=self.range, ignore=(shooter,))
         if hit.hit and hasattr(hit.entity, "take_damage"):
+            was_alive = getattr(hit.entity, "alive", True)
             hit.entity.take_damage(damage, self.damage_type, self.armor_pen)
+            if was_alive and not getattr(hit.entity, "alive", True):
+                self._kills_this_attack += 1
         return hit
 
     def animate_attack(self):
@@ -96,7 +109,7 @@ class Weapon(Entity):
 
 class Sword(Weapon):
     def __init__(self):
-        super().__init__(name="Espada", damage=25, damage_type="slash", range=2,
+        super().__init__(weapon_id="sword", damage=25, damage_type="slash", range=2,
                          fire_rate=2.5, armor_pen=.10,
                          attack_sound="sword_swing.wav",
                          rest_position=(.55, -.5, 1.1),
@@ -118,7 +131,7 @@ class Sword(Weapon):
 
 class Hammer(Weapon):
     def __init__(self):
-        super().__init__(name="Martillo", damage=45, damage_type="blunt", range=2.5,
+        super().__init__(weapon_id="hammer", damage=45, damage_type="blunt", range=2.5,
                          fire_rate=.8, armor_pen=.40,
                          attack_sound="hammer_swing.wav",
                          rest_position=(.6, -.6, 1.15),
@@ -146,7 +159,7 @@ class Hammer(Weapon):
 
 class Pistol(Weapon):
     def __init__(self):
-        super().__init__(name="Pistola", damage=25, damage_type="pierce", range=15,
+        super().__init__(weapon_id="pistol", damage=25, damage_type="pierce", range=15,
                          fire_rate=1.5, armor_pen=.25,
                          attack_sound="pistol_shot.wav",
                          rest_position=(.45, -.38, .85),
@@ -180,7 +193,7 @@ class Shotgun(Weapon):
     SPREAD = .07   # ~4 degrees of spread
 
     def __init__(self):
-        super().__init__(name="Escopeta", damage=12, damage_type="pierce", range=6,
+        super().__init__(weapon_id="shotgun", damage=12, damage_type="pierce", range=6,
                          fire_rate=.7, armor_pen=.10,
                          attack_sound="shotgun_blast.wav",
                          rest_position=(.42, -.42, .9),
@@ -223,7 +236,7 @@ class Bow(Weapon):
     ARROW_SPEED = 70   # m/s, only for the visual projectile
 
     def __init__(self):
-        super().__init__(name="Arco", damage=50, damage_type="pierce", range=30,
+        super().__init__(weapon_id="bow", damage=50, damage_type="pierce", range=30,
                          fire_rate=.6, armor_pen=.40,
                          attack_sound="bow_shot.wav",
                          rest_position=(.32, -.38, .95),
