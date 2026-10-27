@@ -223,3 +223,12 @@ class WaveTelemetry(BaseModel):
             deaths=deaths,
             weapon_usage=weapon_usage,
         )
+
+
+def stat_changes(stats: EnemyStats, base: EnemyStats = BASE_STATS) -> dict[str, tuple]:
+    """Stats that differ from `base`, as {stat: (base_value, new_value)}.
+    Used by the HUD and the logs to explain what an evolution changed."""
+    old, new = base.model_dump(), stats.model_dump()
+    return {name: (old[name], new[name]) for name in old
+            if (old[name] != new[name] if isinstance(old[name], bool)
+                else abs(old[name] - new[name]) > 1e-9)}

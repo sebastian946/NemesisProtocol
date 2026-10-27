@@ -8,6 +8,10 @@ from ursina.prefabs.first_person_controller import FirstPersonController
 
 app = Ursina()
 
+from director import Director  # noqa: E402
+from shared.i18n import describe_language, t  # noqa: E402
+from hud import EvolutionPanel, wave_summary_text  # noqa: E402
+from telemetry import WaveTracker  # noqa: E402
 from waves import WaveManager, enemies_for_wave  # noqa: E402
 from weapons import Bow, Hammer, Pistol, Shotgun, Sword, load_sound  # noqa: E402 (needs the app created)
 
@@ -98,16 +102,17 @@ hp_bar_bg = Entity(parent=camera.ui, model="quad", color=color.rgb32(35, 35, 35)
                    scale=(.3, .03), position=window.bottom_left + Vec2(.19, .1))
 hp_bar = Entity(parent=hp_bar_bg, model="quad", color=color.rgb32(90, 200, 90),
                 origin_x=-.5, x=-.5, z=-.01)
-hp_label = Text(text="HP", origin=(.5, 0), position=hp_bar_bg.position + Vec2(-.17, 0), scale=.9)
+hp_label = Text(text=t("hud.hp"), origin=(.5, 0), position=hp_bar_bg.position + Vec2(-.17, 0), scale=.9)
 damage_overlay = Entity(parent=camera.ui, model="quad", scale=2,
                         color=color.rgba32(255, 40, 40, 0))
-game_over_text = Text(text="GAME OVER", origin=(0, 0), scale=3,
+game_over_text = Text(text=t("hud.game_over"), origin=(0, 0), scale=3,
                       color=color.rgb32(230, 60, 60), enabled=False)
 
 
 def damage_player(amount):
     if player.hp <= 0:
         return
+    tracker.record_damage(min(amount, player.hp))
     player.hp = max(0, player.hp - amount)
     hp_bar.scale_x = player.hp / PLAYER_MAX_HP
     hurt_sound.play()
@@ -123,6 +128,11 @@ def game_over():
 
 
 def restart_round():
+    global pending_decision
+    pending_decision = None          # a late answer from the previous run is ignored
+    director.reset()
+    tracker.reset()
+    evolution_panel.show_base()
     game_over_text.enabled = False
     player.hp = PLAYER_MAX_HP
     hp_bar.scale_x = 1
@@ -130,29 +140,68 @@ def restart_round():
     wave_manager.restart()
 
 
-# --- Waves ---
+# --- AI Director: telemetry → evolution ---
+director = Director()
+tracker = WaveTracker()
+evolution_panel = EvolutionPanel(director.mode)
+pending_decision = None   # Future with the director's decision for the next wave
+summary_label = Text(text="", origin=(0, 0), position=(0, .1), scale=1.1,
+                     color=color.rgb32(230, 230, 230), enabled=False)
+print(describe_language())
+print(t("log.director_mode",
+        mode=t("source.claude_graph" if director.mode == "claude" else "source.rules_local")))
+
+
 def on_wave_start(wave, stats):
-    print(f"[wave {wave}] {enemies_for_wave(wave)} enemies | stats: {stats.model_dump()}")
+    tracker.reset()
+    print(t("log.wave_start", wave=wave, count=enemies_for_wave(wave), stats=stats.model_dump()))
 
 
 def on_wave_end(wave, summary):
-    # Telemetry hook (Stage 2): the WaveTelemetry snapshot will be built here
-    print(f"[wave {wave}] cleared | {summary}")
+    global pending_decision
+    telemetry = tracker.build(wave=wave, duration_s=summary["duration_s"],
+                              player_hp_remaining=player.hp)
+    print(t("log.wave_cleared", wave=wave, telemetry=telemetry.model_dump_json()))
+    summary_label.text = wave_summary_text(telemetry)
+    summary_label.enabled = True
+    invoke(setattr, summary_label, "enabled", False, delay=4)
+    pending_decision = director.decide_async(telemetry)
+
+
+def director_ready():
+    """Called every frame once the break is over; applies the decision when it arrives."""
+    global pending_decision
+    if pending_decision is None:
+        return True
+    if not pending_decision.done():
+        return False
+    decision = pending_decision.result()
+    pending_decision = None
+    wave_manager.set_stats_for_next_wave(decision.stats)
+    evolution_panel.show(decision)
+    print(t("log.decision", source=t("source.claude" if decision.source == "claude" else "source.rules"),
+            attempts=decision.attempts,
+            issues=decision.issues, adaptation=decision.adaptation.model_dump())
+          + (t("log.fallback", error=decision.error) if decision.error else ""))
+    return True
 
 
 wave_manager = WaveManager(player, arena_half=half, obstacles=obstacles,
                            on_attack_player=damage_player, kill_sound=kill_sound,
-                           on_wave_start=on_wave_start, on_wave_end=on_wave_end)
+                           on_wave_start=on_wave_start, on_wave_end=on_wave_end,
+                           can_start_next_wave=director_ready)
 wave_manager.start()
 
 
 # --- Weapons: keys 1-5 ---
 weapons = {"1": Sword(), "2": Pistol(), "3": Hammer(), "4": Shotgun(), "5": Bow()}
+for weapon in weapons.values():
+    weapon.on_attack = tracker.record_attack
 current_weapon = weapons["2"]
 current_weapon.equip()
 
 weapon_label = Text(origin=(.5, -.5), position=window.bottom_right + Vec2(-.03, .03), scale=1)
-hint_label = Text(text="Click izquierdo: atacar | Teclas 1-5: cambiar de arma",
+hint_label = Text(text=t("hud.hint"),
                   origin=(-.5, -.5), position=window.bottom_left + Vec2(.03, .03),
                   scale=.8, color=color.rgb32(220, 220, 220))
 

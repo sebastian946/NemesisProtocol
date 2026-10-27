@@ -5,6 +5,8 @@ Hooks for the next stages:
 - on_wave_start(wave, stats): when the wave spawns.
 - on_wave_end(wave, summary): when the last enemy dies → telemetry plugs in here.
 - set_stats_for_next_wave(stats): apply_adaptation(BASE_STATS, adaptation) plugs in here.
+- can_start_next_wave(): the break is held until it returns True (the AI
+  Director is still deciding the evolution).
 """
 from math import ceil
 from random import uniform
@@ -14,6 +16,7 @@ from ursina import *
 import time
 
 from enemy import Enemy
+from shared.i18n import t
 from shared.models import BASE_STATS, EnemyStats
 
 WAVE_BREAK_SECONDS = 5     # pause between waves
@@ -30,7 +33,8 @@ def enemies_for_wave(wave: int) -> int:
 
 class WaveManager(Entity):
     def __init__(self, player, arena_half, obstacles, on_attack_player,
-                 kill_sound=None, on_wave_start=None, on_wave_end=None):
+                 kill_sound=None, on_wave_start=None, on_wave_end=None,
+                 can_start_next_wave=None):
         super().__init__()
         self.player = player
         self.arena_half = arena_half
@@ -39,6 +43,7 @@ class WaveManager(Entity):
         self.kill_sound = kill_sound
         self.on_wave_start = on_wave_start or (lambda wave, stats: None)
         self.on_wave_end = on_wave_end or (lambda wave, summary: None)
+        self.can_start_next_wave = can_start_next_wave or (lambda: True)
 
         self.wave = 0
         self.enemies: list[Enemy] = []
@@ -58,7 +63,7 @@ class WaveManager(Entity):
     def start(self):
         self.wave = 0
         self.stats = BASE_STATS
-        self.wave_label.text = "OLEADA 1"
+        self.wave_label.text = t("wave.label", wave=1)
         self._begin_break(FIRST_WAVE_DELAY)
 
     def restart(self):
@@ -79,9 +84,14 @@ class WaveManager(Entity):
     def update(self):
         if self._break_left <= 0:
             return
-        self._break_left -= time.dt
-        self.status_label.text = f"Siguiente oleada en {ceil(max(self._break_left, 0))}..."
-        if self._break_left <= 0:
+        self._break_left = max(0.0, self._break_left - time.dt)
+        if self._break_left > 0:
+            self.status_label.text = t("wave.next_in", seconds=ceil(self._break_left))
+        elif not self.can_start_next_wave():
+            self._break_left = 1e-6   # hold the break until the director answers
+            dots = "." * (1 + int(time.time() * 2) % 3)
+            self.status_label.text = t("wave.director_thinking") + dots
+        else:
             self._start_next_wave()
 
     def _begin_break(self, seconds):
@@ -96,9 +106,9 @@ class WaveManager(Entity):
             self.enemies.append(Enemy(self.player, self.stats, x=x, z=z,
                                       on_attack_player=self.on_attack_player,
                                       on_death=self._on_enemy_death))
-        self.wave_label.text = f"OLEADA {self.wave}"
+        self.wave_label.text = t("wave.label", wave=self.wave)
         self._update_status()
-        self._show_banner(f"OLEADA {self.wave}")
+        self._show_banner(t("wave.label", wave=self.wave))
         self.on_wave_start(self.wave, self.stats)
 
     def _on_enemy_death(self, enemy):
@@ -118,12 +128,12 @@ class WaveManager(Entity):
             "player_hp": self.player.hp,
         }
         self.on_wave_end(self.wave, summary)
-        self._show_banner(f"OLEADA {self.wave} SUPERADA")
+        self._show_banner(t("wave.cleared", wave=self.wave))
         self._begin_break(WAVE_BREAK_SECONDS)
 
     # --- Helpers ---
     def _update_status(self):
-        self.status_label.text = f"Enemigos: {len(self.alive_enemies)}"
+        self.status_label.text = t("wave.enemies", count=len(self.alive_enemies))
 
     def _show_banner(self, text, seconds=2):
         self.banner.text = text
